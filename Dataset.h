@@ -3,6 +3,13 @@
 
 #include <vector>
 #include <string>
+#include <fstream>
+#include <sstream>
+#include <algorithm>
+#include <iostream>
+#include <string>
+#include <cmath>
+
 
 using namespace std;
 

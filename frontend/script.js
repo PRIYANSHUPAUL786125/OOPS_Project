@@ -1,96 +1,12 @@
-// script.js – modular, API‑ready, vanilla JS
 (function () {
   "use strict";
 
-  // ---------- MOCK DATASET ----------
-  const mockStudents = [
-    {
-      registration_no: "2021CS101",
-      wgpa: 7.5,
-      performance_variance: 0.18,
-      fail_count: 1,
-      avg_gp: 7.0,
-      last_gp: 7.8,
-      gp_trend: 0.8,
-      actual_cg: 7.2,
-    },
-    {
-      registration_no: "2021CS102",
-      wgpa: 9.1,
-      performance_variance: 0.05,
-      fail_count: 0,
-      avg_gp: 9.0,
-      last_gp: 9.3,
-      gp_trend: 0.3,
-      actual_cg: 9.2,
-    },
-    {
-      registration_no: "2021CS103",
-      wgpa: 5.2,
-      performance_variance: 0.45,
-      fail_count: 3,
-      avg_gp: 5.0,
-      last_gp: 4.8,
-      gp_trend: -0.2,
-      actual_cg: 5.0,
-    },
-    {
-      registration_no: "2021CS104",
-      wgpa: 8.0,
-      performance_variance: 0.1,
-      fail_count: 0,
-      avg_gp: 8.1,
-      last_gp: 8.4,
-      gp_trend: 0.5,
-      actual_cg: 8.3,
-    },
-    {
-      registration_no: "2021CS105",
-      wgpa: 6.8,
-      performance_variance: 0.22,
-      fail_count: 2,
-      avg_gp: 6.5,
-      last_gp: 6.9,
-      gp_trend: 0.4,
-      actual_cg: 6.7,
-    },
-    {
-      registration_no: "2022EC201",
-      wgpa: 4.9,
-      performance_variance: 0.6,
-      fail_count: 4,
-      avg_gp: 4.3,
-      last_gp: 4.1,
-      gp_trend: -0.5,
-      actual_cg: 4.2,
-    },
-    {
-      registration_no: "2022EC202",
-      wgpa: 8.7,
-      performance_variance: 0.09,
-      fail_count: 0,
-      avg_gp: 8.5,
-      last_gp: 8.9,
-      gp_trend: 0.6,
-      actual_cg: 8.8,
-    },
-    {
-      registration_no: "2023ME301",
-      wgpa: 7.1,
-      performance_variance: 0.28,
-      fail_count: 1,
-      avg_gp: 6.9,
-      last_gp: 7.3,
-      gp_trend: 0.2,
-      actual_cg: 7.0,
-    },
-  ];
-
-  // ---------- STATE ----------
   let currentPage = "dashboard";
   let sidebarCollapsed = localStorage.getItem("sidebarCollapsed") === "true";
   let darkMode = localStorage.getItem("theme") !== "light";
-  let filteredStudents = [...mockStudents];
+
+  let allStudents = [];
+  let filteredStudents = [];
   let currentPageTable = 1;
   const rowsPerPage = 5;
 
@@ -128,31 +44,6 @@
     setTimeout(() => toast.remove(), 3000);
   }
 
-  // API simulation
-  function fetchStudents() {
-    return new Promise((resolve) => {
-      setTimeout(() => resolve([...mockStudents]), 800);
-    });
-  }
-
-  // Simulated ML prediction
-  function predictCGPA(features) {
-    return new Promise((resolve) => {
-      setTimeout(() => {
-        const { wgpa, perfVar, failCount, avgGp, lastGp, gpTrend } = features;
-        let base = wgpa * 0.4 + avgGp * 0.3 + lastGp * 0.3;
-        let penalty = failCount * 0.4 + perfVar * 2.5;
-        let trendBonus = gpTrend * 1.2;
-        let predicted = Math.min(10, Math.max(0, base - penalty + trendBonus));
-        let confidence = Math.min(98, 75 + (10 - failCount * 3) + gpTrend * 10);
-        resolve({
-          predicted: +predicted.toFixed(2),
-          confidence: Math.round(confidence),
-        });
-      }, 600);
-    });
-  }
-
   function animateCounter(el, start, end, duration) {
     let startTime;
     const step = (timestamp) => {
@@ -164,39 +55,63 @@
     requestAnimationFrame(step);
   }
 
+  // ---------- API INTEGRATION ----------
+
+  // Fetch actual data from Crow backend
+  async function fetchUsersAPI() {
+    try {
+      const res = await fetch("http://localhost:18080/users");
+      if (!res.ok) throw new Error("Network response was not ok");
+
+      const json = await res.json();
+      if (json.success && json.data && json.data.users) {
+        allStudents = json.data.users;
+        filteredStudents = [...allStudents];
+        return true;
+      }
+    } catch (error) {
+      console.error("API Error:", error);
+      showToast("Failed to fetch live data from backend", "error");
+    }
+    return false;
+  }
+
   // ---------- CORE FUNCTIONS ----------
-  async function updateMetrics() {
+  function updateMetrics() {
     const grid = document.getElementById("metricsGrid");
     if (!grid) return;
-    grid.innerHTML =
-      '<div class="skeleton" style="height:120px;grid-column:span 4"></div>'.repeat(
-        4,
-      );
 
-    const data = await fetchStudents();
-    const total = data.length;
-    const avgCg = data.reduce((a, b) => a + b.actual_cg, 0) / total;
-    const maxCg = Math.max(...data.map((s) => s.actual_cg));
+    if (allStudents.length === 0) {
+      grid.innerHTML =
+        '<div class="skeleton" style="height:120px;grid-column:span 4"></div>'.repeat(
+          4,
+        );
+      return;
+    }
+
+    const total = allStudents.length;
+    const avgCg = allStudents.reduce((a, b) => a + b.actual_cg, 0) / total || 0;
+    const maxCg = Math.max(...allStudents.map((s) => s.actual_cg), 0);
     const failRate = (
-      (data.filter((s) => s.fail_count > 0).length / total) *
+      (allStudents.filter((s) => s.fail_count > 0).length / total) *
       100
     ).toFixed(1);
 
     const metrics = [
-      { label: "Total Students", value: total, trend: "↑ 4%", up: true },
+      { label: "Total Students", value: total, trend: "Live", up: null },
       {
         label: "Average CGPA",
         value: avgCg.toFixed(2),
-        trend: "↑ 0.2",
-        up: true,
+        trend: "Live",
+        up: null,
       },
-      { label: "Highest CGPA", value: maxCg.toFixed(2), trend: "—", up: null },
       {
-        label: "Failure Rate",
-        value: failRate + "%",
-        trend: "↓ 1%",
-        up: false,
+        label: "Highest CGPA",
+        value: maxCg.toFixed(2),
+        trend: "Live",
+        up: null,
       },
+      { label: "Failure Rate", value: failRate + "%", trend: "Live", up: null },
     ];
 
     grid.innerHTML = metrics
@@ -205,7 +120,7 @@
       <div class="metric-card">
         <div class="metric-label">${m.label}</div>
         <div class="metric-value" data-target="${m.value}">0</div>
-        <div class="trend">${m.trend} ${m.up === true ? "📈" : m.up === false ? "📉" : ""}</div>
+        <div class="trend">${m.trend}</div>
       </div>
     `,
       )
@@ -220,7 +135,8 @@
   function renderTable() {
     if (!tableBody) return;
     const searchTerm = (tableSearch?.value || "").toLowerCase();
-    let filtered = mockStudents.filter((s) =>
+
+    let filtered = allStudents.filter((s) =>
       s.registration_no.toLowerCase().includes(searchTerm),
     );
 
@@ -270,6 +186,8 @@
   }
 
   function drawCharts() {
+    if (allStudents.length === 0) return;
+
     // 1. CGPA Distribution Bar Chart
     const barCanvas = document.getElementById("cgpaBarChart");
     if (barCanvas) {
@@ -284,7 +202,7 @@
       const ranges = [0, 0, 0, 0, 0]; // <5, 5-6, 6-7, 7-8, 8+
       const labels = ["<5", "5-6", "6-7", "7-8", "8+"];
 
-      mockStudents.forEach((s) => {
+      allStudents.forEach((s) => {
         const cg = s.actual_cg;
         if (cg < 5) ranges[0]++;
         else if (cg < 6) ranges[1]++;
@@ -293,12 +211,11 @@
         else ranges[4]++;
       });
 
-      const maxCount = Math.max(...ranges, 1); // Prevent div by 0
+      const maxCount = Math.max(...ranges, 1);
       const barWidth = (width - 100) / 5;
 
       ctx.clearRect(0, 0, width, height);
 
-      // Draw grid lines
       ctx.strokeStyle = darkMode ? "#334155" : "#e2e8f0";
       ctx.lineWidth = 0.5;
       for (let i = 0; i <= 5; i++) {
@@ -309,7 +226,6 @@
         ctx.stroke();
       }
 
-      // Draw bars
       ranges.forEach((count, i) => {
         const barHeight = (count / maxCount) * 140;
         const x = 60 + i * barWidth;
@@ -338,20 +254,18 @@
       donutCanvas.width = size;
       donutCanvas.height = size;
 
-      const passCount = mockStudents.filter((s) => s.fail_count === 0).length;
-      const failCount = mockStudents.length - passCount;
-      const total = mockStudents.length;
+      const passCount = allStudents.filter((s) => s.fail_count === 0).length;
+      const failCount = allStudents.length - passCount;
+      const total = allStudents.length;
 
       ctx.clearRect(0, 0, size, size);
 
-      // Pass segment
       ctx.beginPath();
       ctx.fillStyle = "#22c55e";
       ctx.arc(size / 2, size / 2, 70, 0, (passCount / total) * Math.PI * 2);
       ctx.lineTo(size / 2, size / 2);
       ctx.fill();
 
-      // Fail segment
       ctx.beginPath();
       ctx.fillStyle = "#ef4444";
       ctx.arc(
@@ -364,13 +278,11 @@
       ctx.lineTo(size / 2, size / 2);
       ctx.fill();
 
-      // Center circle
       ctx.beginPath();
       ctx.fillStyle = darkMode ? "#0f172a" : "#ffffff";
       ctx.arc(size / 2, size / 2, 40, 0, Math.PI * 2);
       ctx.fill();
 
-      // Text
       ctx.fillStyle = darkMode ? "#f1f5f9" : "#0f172a";
       ctx.font = "bold 14px Inter, sans-serif";
       ctx.textAlign = "center";
@@ -388,7 +300,7 @@
       lineCanvas.width = width;
       lineCanvas.height = height;
 
-      const sortedStudents = [...mockStudents].sort(
+      const sortedStudents = [...allStudents].sort(
         (a, b) => a.actual_cg - b.actual_cg,
       );
       const points = sortedStudents.map((s, i) => ({
@@ -423,6 +335,8 @@
       n.classList.toggle("active", n.dataset.page === pageId);
     });
     currentPage = pageId;
+
+    // Refresh components
     if (pageId === "dashboard") updateMetrics();
     if (pageId === "students") renderTable();
     if (pageId === "analytics") setTimeout(drawCharts, 50);
@@ -439,7 +353,7 @@
       "GP Trend",
       "Actual CG",
     ];
-    const rows = mockStudents.map((s) => [
+    const rows = allStudents.map((s) => [
       s.registration_no,
       s.wgpa,
       s.performance_variance,
@@ -449,11 +363,11 @@
       s.gp_trend,
       s.actual_cg,
     ]);
-
     const csvContent = [
       headers.join(","),
       ...rows.map((row) => row.join(",")),
     ].join("\n");
+
     const blob = new Blob([csvContent], { type: "text/csv" });
     const url = window.URL.createObjectURL(blob);
     const a = document.createElement("a");
@@ -461,13 +375,10 @@
     a.download = `student_data_${new Date().toISOString().split("T")[0]}.csv`;
     a.click();
     window.URL.revokeObjectURL(url);
-
     showToast("CSV exported successfully", "success");
   }
 
   // ---------- INITIALIZATION & EVENT LISTENERS ----------
-
-  // Theme and Sidebar Persistence
   if (sidebarCollapsed && sidebar) sidebar.classList.add("collapsed");
   if (!darkMode) body.classList.add("light-mode");
 
@@ -486,7 +397,6 @@
     }),
   );
 
-  // Navigation
   navItems.forEach((item) =>
     item.addEventListener("click", (e) => {
       e.preventDefault();
@@ -494,14 +404,13 @@
     }),
   );
 
-  // Search and Sort
   let searchTimeout;
   globalSearch?.addEventListener("input", (e) => {
     clearTimeout(searchTimeout);
     searchTimeout = setTimeout(() => {
       const query = e.target.value.toLowerCase().trim();
       if (!query) return;
-      const found = mockStudents.find((s) =>
+      const found = allStudents.find((s) =>
         s.registration_no.toLowerCase().includes(query),
       );
       if (found) {
@@ -522,43 +431,17 @@
   tableSearch?.addEventListener("input", renderTable);
   sortSelect?.addEventListener("change", renderTable);
 
-  // ML Feature Prediction
   const predictFeatureBtn = document.getElementById("predictFeatureBtn");
   if (predictFeatureBtn) {
-    predictFeatureBtn.addEventListener("click", async () => {
-      const output = document.getElementById("featurePredictionOutput");
-      const originalHTML = output.innerHTML;
-      output.innerHTML = `
-        <div class="skeleton" style="height: 40px; margin-bottom: 10px;"></div>
-        <div class="skeleton" style="height: 6px; border-radius: 10px;"></div>
-        <div class="skeleton" style="height: 20px; margin-top: 5px; width: 60%;"></div>
-      `;
-
-      const features = {
-        wgpa: parseFloat(document.getElementById("wgpa")?.value) || 0,
-        perfVar: parseFloat(document.getElementById("perfVar")?.value) || 0,
-        failCount: parseInt(document.getElementById("failCount")?.value) || 0,
-        avgGp: parseFloat(document.getElementById("avgGp")?.value) || 0,
-        lastGp: parseFloat(document.getElementById("lastGp")?.value) || 0,
-        gpTrend: parseFloat(document.getElementById("gpTrend")?.value) || 0,
-      };
-
-      try {
-        const result = await predictCGPA(features);
-        output.innerHTML = `
-          <div class="predicted-value">${result.predicted}</div>
-          <div class="confidence-bar"><span style="width: ${result.confidence}%"></span></div>
-          <div class="confidence-text">Confidence ${result.confidence}%</div>
-        `;
-        showToast(`Prediction complete: CGPA ${result.predicted}`, "success");
-      } catch (error) {
-        output.innerHTML = originalHTML;
-        showToast("Prediction failed. Please try again.", "error");
-      }
+    predictFeatureBtn.addEventListener("click", () => {
+      showToast(
+        "Backend requires SGPA sequence. Please use the SGPA predictor.",
+        "error",
+      );
     });
   }
 
-  // SGPA Generator and Prediction
+  // --- Live SGPA Generator and Prediction via Backend API ---
   const generateBtn = document.getElementById("generateSemBtn");
   if (generateBtn) {
     generateBtn.addEventListener("click", () => {
@@ -581,7 +464,6 @@
 
       container.style.opacity = "0";
       setTimeout(() => (container.style.opacity = "1"), 10);
-      showToast(`Generated ${count} semester inputs`, "info");
     });
     setTimeout(() => generateBtn.click(), 100);
   }
@@ -600,7 +482,6 @@
       const avg = values.reduce((sum, val) => sum + val, 0) / values.length;
       const trend =
         values.length > 1 ? values[values.length - 1] - values[0] : 0;
-
       const avgDisplay = document.getElementById("avgSgpaDisplay");
       const trendDisplay = document.getElementById("sgpaTrendDisplay");
 
@@ -630,23 +511,40 @@
         <div class="skeleton" style="height: 6px; border-radius: 10px;"></div>
       `;
 
-      setTimeout(() => {
-        const avg = values.reduce((sum, val) => sum + val, 0) / values.length;
-        const trend =
-          values.length > 1 ? values[values.length - 1] - values[0] : 0;
-        const predicted = Math.min(10, Math.max(0, avg + trend * 1.2));
-        const confidence = Math.min(
-          95,
-          70 + values.length * 3 + (trend > 0 ? 10 : 0),
-        );
+      try {
+        // --- THIS WAS THE FIX: Updated to absolute URL ---
+        const res = await fetch("http://localhost:18080/predict", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ sems: values }),
+        });
 
-        output.innerHTML = `
-          <div class="predicted-value">${predicted.toFixed(2)}</div>
-          <div class="confidence-bar"><span style="width: ${confidence}%"></span></div>
-          <div class="confidence-text">Confidence ${Math.round(confidence)}%</div>
-        `;
-        showToast(`SGPA Prediction: ${predicted.toFixed(2)} CGPA`, "success");
-      }, 800);
+        if (!res.ok) throw new Error("API responded with an error");
+
+        const json = await res.json();
+
+        if (json.success && json.data) {
+          const predicted = json.data.predicted_cg_lr;
+          const confidence = json.data.data_confidence;
+          const category = json.data.lr_category;
+
+          output.innerHTML = `
+            <div class="predicted-value">${predicted.toFixed(2)}</div>
+            <div class="confidence-bar"><span style="width: ${confidence}%"></span></div>
+            <div class="confidence-text">Confidence ${Math.round(confidence)}% • ${category}</div>
+          `;
+          showToast(
+            `Backend ML Prediction: ${predicted.toFixed(2)} CGPA`,
+            "success",
+          );
+        } else {
+          throw new Error("Invalid format returned from API");
+        }
+      } catch (err) {
+        output.innerHTML = `<div class="predicted-value text-red">Error</div>`;
+        showToast("Prediction failed. Check backend connection.", "error");
+        console.error(err);
+      }
     });
   }
 
@@ -677,7 +575,6 @@
     }
   });
 
-  // Export Button UI Injection
   const toolbar = document.querySelector(".table-toolbar");
   if (toolbar && !toolbar.querySelector(".export-btn")) {
     const exportBtn = document.createElement("button");
@@ -688,7 +585,6 @@
     toolbar.appendChild(exportBtn);
   }
 
-  // Window Resize (Charts)
   let resizeTimeout;
   window.addEventListener("resize", () => {
     clearTimeout(resizeTimeout);
@@ -697,7 +593,6 @@
     }, 200);
   });
 
-  // Ripple Effect
   document.addEventListener("click", (e) => {
     const rippleElement = e.target.closest(".ripple");
     if (rippleElement) {
@@ -724,8 +619,12 @@
   style.textContent = `@keyframes ripple-animation { to { transform: scale(4); opacity: 0; } }`;
   document.head.appendChild(style);
 
-  // Initialize
-  function initialize() {
+  // --- Bootstrap Initialization ---
+  async function initialize() {
+    // 1. Fetch data from backend first
+    const success = await fetchUsersAPI();
+
+    // 2. Initialize UI
     updateMetrics();
     renderTable();
 
@@ -740,12 +639,11 @@
     }
 
     setTimeout(drawCharts, 100);
-    showToast("Dashboard ready • Student Analytics", "success");
-  }
 
-  document.addEventListener("visibilitychange", () => {
-    if (!document.hidden && currentPage === "dashboard") updateMetrics();
-  });
+    if (success) {
+      showToast("Live Dashboard Ready • Connected to API", "success");
+    }
+  }
 
   if (document.readyState === "loading") {
     document.addEventListener("DOMContentLoaded", initialize);
@@ -754,7 +652,12 @@
   }
 
   window.studentAnalytics = {
-    refreshData: updateMetrics,
+    refreshData: async () => {
+      await fetchUsersAPI();
+      updateMetrics();
+      renderTable();
+      if (currentPage === "analytics") drawCharts();
+    },
     exportCSV: exportToCSV,
     switchPage: switchPage,
   };
